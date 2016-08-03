@@ -40,8 +40,18 @@ from pulseclient import PARecorder
 
 import VAD
 
-FRAMES_PER_BUFFER = 16000
-        
+import zmq
+import json
+import logging
+
+ENABLE_LOCAL_WAVDUMP = False
+
+SAMPLE_RATE       = 16000
+FRAMES_PER_BUFFER = 16000 / 2
+
+NUM_FRAMES_PRE    = 1
+NUM_FRAMES_POST   = 0
+
 STATE_IDLE     = 0
 STATE_SPEECH1  = 1
 STATE_SPEECH2  = 2
@@ -50,6 +60,33 @@ STATE_SILENCE2 = 4
 
 RING_BUF_ENTRIES = 5 * 180 # 5 minutes max
 
+def _comm (cmd, arg):
+
+    global zmq_socket
+
+    logging.debug("_comm: %s %s" % (cmd, arg))
+
+    res = None
+
+    try:
+
+        rq = json.dumps ([cmd, arg])
+
+        #print "Sending request %s" % rq
+        zmq_socket.send (rq)
+
+        #  Get the reply.
+        message = zmq_socket.recv()
+        res = json.loads(message)
+    except:
+
+        logging.error("tts_comm: EXCEPTION.")
+        traceback.print_exc()
+
+        pass
+
+    return res
+
 #
 # init
 #
@@ -57,6 +94,8 @@ RING_BUF_ENTRIES = 5 * 180 # 5 minutes max
 reload(sys)
 sys.setdefaultencoding('utf-8')
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+
+logging.basicConfig(level=logging.DEBUG)
 
 #
 # load config, set up global variables
@@ -94,14 +133,28 @@ audio_num   = 0
 # pulseaudio recorder
 #
 
-rec = PARecorder (source, 16000, volume)
+rec = PARecorder (source, SAMPLE_RATE, volume)
+
+#
+# zmq connection to asr server
+#
+
+asr_server = config.get("audio", "asr_server")
+asr_port   = int(config.get("audio", "asr_port"))
+
+zmq_context = zmq.Context()
+logging.debug ("Connecting to server...")
+zmq_socket = zmq_context.socket(zmq.REQ)
+zmq_socket.connect ("tcp://%s:%s" % (asr_server, asr_port))
+
+logging.debug("conntected.")
 
 #
 # main
 #
 
 rec.start_recording()
-print "Recording..."
+logging.debug ("recording...")
 
 cnt = 0
 avg_intensity = 0.0
@@ -112,19 +165,17 @@ while True:
 
     samples = rec.get_samples(FRAMES_PER_BUFFER)
 
-    print "%d samples, %5.1f s" % (len(samples)/2, float(len(samples)/2) / 16000.0)
-
+    logging.debug("%d samples, %5.1f s" % (len(samples)/2, float(len(samples)/2) / float(SAMPLE_RATE)))
 
     buf = array.array('B', samples).tostring()
 
-    #l, buf  = recorder.record()
-    ring_buffer[ring_cur] = numpy.fromstring(buf, dtype=numpy.int16)
-    #ring_buffer[ring_cur] = buf
+    logging.debug("len(samples)=%d, len(buf)=%d" % (len(samples), len(buf)))
 
-    #res =  ltsd.compute(audio)
+    ring_buffer[ring_cur] = numpy.fromstring(buf, dtype=numpy.int16)
+
     vad, avg_intensity =  VAD.moattar_homayounpour(ring_buffer[ring_cur], avg_intensity, cnt)
 
-    print ring_cur, vad, avg_intensity
+    logging.debug("VAD: ring_cur=%d, vad=%s, avg_intensity=%f" % (ring_cur, vad, avg_intensity))
     
     if state == STATE_IDLE:
         if vad:
@@ -135,7 +186,7 @@ while True:
 
     elif state == STATE_SPEECH1:
         if vad: 
-            print "*** SPEECH DETECTED at frame %3d ***" % audio_start
+            logging.debug ("*** SPEECH DETECTED at frame %3d ***" % audio_start)
             state = STATE_SPEECH2
         else:
             state = STATE_IDLE
@@ -153,32 +204,38 @@ while True:
         else:
             state = STATE_IDLE
 
-            while True:
-                audiofn = "audio_%03d.wav" % audio_cur
-                audio_cur += 1
-                if not os.path.isfile(audiofn):
-                    break
-
-            print "*** END OF SPEECH at frame %3d (num: %5d, audiofn: %s) ***" % (ring_cur, audio_num, audiofn)
-
-            wf = wave.open(audiofn, 'wb')
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(16000)
-            wf.setnframes(audio_num * FRAMES_PER_BUFFER)
+            logging.info("*** END OF SPEECH at frame %3d (num: %5d) ***" % (ring_cur, audio_num))
 
             audio = []
-            for i in range(audio_num):
-                audio.extend(ring_buffer[(audio_start + i) % RING_BUF_ENTRIES])
+            for i in range(audio_num + NUM_FRAMES_PRE + NUM_FRAMES_POST):
+                audio.extend(ring_buffer[(audio_start + i - NUM_FRAMES_PRE) % RING_BUF_ENTRIES])
 
-            packed_audio = struct.pack('%sh' % len(audio), *audio)
-            wf.writeframes(packed_audio)
+            # print type(audio), type(audio[0]), repr(audio)
 
-            wf.close()
+            _comm ("REC", ','.join(["%d" % sample for sample in audio]))
+
+            if ENABLE_LOCAL_WAVDUMP:
+
+                while True:
+                    audiofn = "audio_%03d.wav" % audio_cur
+                    audio_cur += 1
+                    if not os.path.isfile(audiofn):
+                        break
+
+                wf = wave.open(audiofn, 'wb')
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(SAMPLE_RATE)
+                wf.setnframes(audio_num * FRAMES_PER_BUFFER)
+
+                packed_audio = struct.pack('%sh' % len(audio), *audio)
+                wf.writeframes(packed_audio)
+
+                wf.close()
+                logger.info("%s written." % audiofn)
 
 
     cnt       += 1
     audio_num += 1
     ring_cur   = (ring_cur + 1) % RING_BUF_ENTRIES
-
 
