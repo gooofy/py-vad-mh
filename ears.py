@@ -46,6 +46,8 @@ import logging
 
 ENABLE_LOCAL_WAVDUMP = False
 
+logging.basicConfig(level=logging.INFO)
+
 SAMPLE_RATE       = 16000
 FRAMES_PER_BUFFER = 16000 / 2
 
@@ -94,8 +96,6 @@ def _comm (cmd, arg):
 reload(sys)
 sys.setdefaultencoding('utf-8')
 sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
-
-logging.basicConfig(level=logging.DEBUG)
 
 #
 # load config, set up global variables

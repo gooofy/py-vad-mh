@@ -9,8 +9,7 @@ from ctypes import POINTER, c_ubyte, c_void_p, c_ulong, cast, c_int16, c_uint16,
 from pulseaudio.lib_pulseaudio import *
 
 import threading
-
-VERBOSE = True
+import logging
 
 class PARecorder(object):
 
@@ -33,8 +32,7 @@ class PARecorder(object):
 
     def start_recording(self):
 
-        if VERBOSE:
-            print "start_recording..."
+        logging.debug("start_recording...")
 
         self._samples = []
 
@@ -47,8 +45,7 @@ class PARecorder(object):
 
     def stop_recording(self):
 
-        if VERBOSE:
-            print "stop_recording..."
+        logging.debug("stop_recording...")
 
         pa_threaded_mainloop_lock(self._mainloop)
         pa_context_disconnect(self._context)
@@ -65,32 +62,27 @@ class PARecorder(object):
         state = pa_context_get_state(context)
 
         if state == PA_CONTEXT_READY:
-            if VERBOSE:
-                print "Pulseaudio connection ready..."
+            logging.debug("Pulseaudio connection ready...")
             o = pa_context_get_source_info_list(context, self._source_info_cb, None)
             pa_operation_unref(o)
 
         elif state == PA_CONTEXT_FAILED :
-            if VERBOSE:
-                print "Connection failed"
+            logging.error("Connection failed")
 
         elif state == PA_CONTEXT_TERMINATED:
-            if VERBOSE:
-                print "Connection terminated"
+            logging.info("Connection terminated")
 
     def source_info_cb(self, context, source_info_p, _, __):
-        if VERBOSE:
-            print "source_info_cb..."
+        logging.debug("source_info_cb...")
 
         if not source_info_p:
             return
 
         source_info = source_info_p.contents
 
-        if VERBOSE:
-            print 'index:', source_info.index
-            print 'name:', source_info.name
-            print 'description:', source_info.description
+        logging.debug('index       : %d' % source_info.index)
+        logging.debug('name        : %s' % source_info.name)
+        logging.debug('description : %s' % source_info.description)
 
         if self.source_name in source_info.description:
 
@@ -105,16 +97,14 @@ class PARecorder(object):
             operation = pa_context_set_source_volume_by_index (self._context, source_info.index, cvol, self._null_cb, None)
             pa_operation_unref(operation)
 
-            print
-            print 'recording from', source_info.name
-            print
+            logging.info('recording from %s' % source_info.name)
 
             samplespec = pa_sample_spec()
             samplespec.channels = 1
             samplespec.format = PA_SAMPLE_S16LE
             samplespec.rate = self.rate
 
-            pa_stream = pa_stream_new(context, "netsphinx", samplespec, None)
+            pa_stream = pa_stream_new(context, "hal_ears", samplespec, None)
             pa_stream_set_read_callback(pa_stream,
                                         self._stream_read_cb,
                                         source_info.index)
