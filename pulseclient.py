@@ -11,6 +11,8 @@ from pulseaudio.lib_pulseaudio import *
 import threading
 import logging
 
+import numpy as np
+
 class PARecorder(object):
 
     def __init__(self, source_name, rate, volume):
@@ -21,26 +23,32 @@ class PARecorder(object):
         # Wrap callback methods in appropriate ctypefunc instances so
         # that the Pulseaudio C API can call them
         self._context_notify_cb = pa_context_notify_cb_t(self.context_notify_cb)
-        self._source_info_cb = pa_source_info_cb_t(self.source_info_cb)
-        self._stream_read_cb = pa_stream_request_cb_t(self.stream_read_cb)
-        self._null_cb = pa_context_success_cb_t(null_cb)
+        self._source_info_cb    = pa_source_info_cb_t(self.source_info_cb)
+        self._stream_read_cb    = pa_stream_request_cb_t(self.stream_read_cb)
+        self._null_cb           = pa_context_success_cb_t(null_cb)
 
-        # lock/cond for samples
+        # lock/cond for buffers
 
-        self.lock = threading.Lock()
-        self.cond = threading.Condition(self.lock) 
+        self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock) 
 
-    def start_recording(self):
+    def start_recording(self, frames_per_buffer):
 
         logging.debug("start_recording...")
 
-        self._samples = []
+        self._frames_per_buffer = frames_per_buffer
+        self._buffers           = []
+        self._cur_buf_cnt       = 0
+
+        self._buffers.append(np.empty(self._frames_per_buffer, dtype=np.int16))
 
         self._mainloop = pa_threaded_mainloop_new()
-        _mainloop_api = pa_threaded_mainloop_get_api(self._mainloop)
-        self._context = pa_context_new(_mainloop_api, 'peak_demo')
+        _mainloop_api  = pa_threaded_mainloop_get_api(self._mainloop)
+        self._context  = pa_context_new(_mainloop_api, 'HAL 9000 Ears')
+
         pa_context_set_state_callback(self._context, self._context_notify_cb, None)
         pa_context_connect(self._context, None, 0, None)
+
         pa_threaded_mainloop_start(self._mainloop)
 
     def stop_recording(self):
@@ -73,10 +81,10 @@ class PARecorder(object):
             logging.info("Connection terminated")
 
     def source_info_cb(self, context, source_info_p, _, __):
-        logging.debug("source_info_cb...")
-
         if not source_info_p:
             return
+
+        logging.debug("source_info_cb...")
 
         source_info = source_info_p.contents
 
@@ -118,31 +126,40 @@ class PARecorder(object):
         pa_stream_peek(stream, data, c_ulong(length))
         data = cast(data, POINTER(c_ubyte))
 
-        self.lock.acquire()
+        self._lock.acquire()
 
-        for i in xrange(length):
-            self._samples.append(data[i])
+        for i in xrange(length/2):
 
-        self.cond.notifyAll()
+            sample = data[i*2] + 256 * data[i*2+1]
 
-        self.lock.release()
+            self._buffers[len(self._buffers)-1][self._cur_buf_cnt] = sample
+            self._cur_buf_cnt += 1 
+
+            # buffer full?
+            if self._cur_buf_cnt >= self._frames_per_buffer:
+
+                self._buffers.append(np.empty(self._frames_per_buffer, dtype=np.int16))
+                self._cur_buf_cnt = 0
+
+                self._cond.notifyAll()
+
+
+        self._lock.release()
 
         pa_stream_drop(stream)
 
 
-    def get_samples(self, num_samples):
+    def get_samples(self):
 
-        self.lock.acquire()
+        self._lock.acquire()
 
-        buf = []
-        for i in range(num_samples):
+        buf = None
+        while len(self._buffers) < 2:
+            self._cond.wait()
 
-            while len(self._samples) == 0:
-                self.cond.wait()
+        buf = self._buffers.pop(0)
 
-            buf.append(self._samples.pop(0))
-
-        self.lock.release()
+        self._lock.release()
 
         return buf
 
