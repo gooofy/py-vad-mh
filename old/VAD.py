@@ -75,7 +75,7 @@ def arithmetic_mean(frame):
     return float(sum(frame)) / float(len(frame))
 
 def get_sample_intensity(samples):
-    return 20.8 * log10(sqrt(sum([x ** 2 for x in samples])/float(len(samples))))
+    return 20.8 * log10(sqrt(sum([float(x) ** 2 for x in samples])/float(len(samples))))
 
 def locateInArray(list1, list2):
     x = 0
