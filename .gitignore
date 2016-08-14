@@ -3,7 +3,6 @@ syntax: glob
 *.swp
 *.swo
 *.pyc
-*.pyx
 *.so
 *.c
 build
