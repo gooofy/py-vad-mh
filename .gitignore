@@ -8,3 +8,4 @@ syntax: glob
 *.c
 build
 tmp
+Profile.prof
