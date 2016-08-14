@@ -19,8 +19,7 @@
 #
 
 #
-# based on :
-# https://mattze96.safe-ws.de/blog/?p=640
+# simple benchmark app for VAD tuning
 #
 
 import sys
@@ -69,5 +68,4 @@ logging.debug("VAD: vad=%s, avg_intensity=%f, delay=%f" % (vad, avg_intensity, e
 
 s = pstats.Stats("Profile.prof")
 s.strip_dirs().sort_stats("time").print_stats()
-
 
