@@ -6,6 +6,26 @@
 # Author: Shriphani Palakodety
 # spalakod@cs.cmu.edu
 
+# Copyright (c) 2009-2010 Shriphani Palakodety
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 # Cython port 2016 by G. Bartsch
 from libcpp cimport bool
 
@@ -61,17 +81,6 @@ cdef real_imaginary_freq_domain(np.ndarray[DTYPE_t, ndim=1] samples):
 
     return freq_domain_real, freq_domain_imag
 
-# cdef int find_first(float item, np.ndarray[DTYPEF_t, ndim=1] vec):
-#     """return the index of the first occurence of item in vec"""
-# 
-#     cdef int i
-# 
-#     for i in range(len(vec)):
-#         if item == vec[i]:
-#             return i
-#     return -1
-
-
 cdef float get_dominant_freq(np.ndarray[DTYPEF_t, ndim=1] real_freq_domain_part, np.ndarray[DTYPEF_t, ndim=1] imag_freq_domain_part):
     '''Returns the dominant frequency'''
 
@@ -99,16 +108,6 @@ cdef float get_dominant_freq(np.ndarray[DTYPEF_t, ndim=1] real_freq_domain_part,
     else:
         dominant_freq = abs(fftfreq(len(imag_freq_domain_part), d=(1.0/44100.0))[max_imag_idx])
 
-
-    # cdef float max_real = max(real_freq_domain_part)
-    # cdef float max_imag = max(imag_freq_domain_part)
-
-    # cdef float dominant_freq = 0
-
-    # if max_real > max_imag:
-    #     dominant_freq = abs(fftfreq(len(real_freq_domain_part), d=(1.0/44100.0))[find_first(max_real, real_freq_domain_part)])
-    # else:
-    #     dominant_freq = abs(fftfreq(len(imag_freq_domain_part), d=(1.0/44100.0))[find_first(max_imag, imag_freq_domain_part)])
 
     return dominant_freq
 
