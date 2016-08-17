@@ -46,10 +46,10 @@ import logging
 
 ENABLE_LOCAL_WAVDUMP = False
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 SAMPLE_RATE       = 16000
-FRAMES_PER_BUFFER = 16000 / 2
+FRAMES_PER_BUFFER = 16000 / 4
 
 NUM_FRAMES_PRE    = 1
 NUM_FRAMES_POST   = 0
@@ -165,7 +165,7 @@ while True:
 
     samples = rec.get_samples()
 
-    logging.debug("%d samples, %5.1f s" % (len(samples), float(len(samples)) / float(SAMPLE_RATE)))
+    logging.debug("%d samples, %5.2f s" % (len(samples), float(len(samples)) / float(SAMPLE_RATE)))
 
     #  buf = array.array('B', samples).tostring()
 
