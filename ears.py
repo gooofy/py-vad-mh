@@ -46,19 +46,20 @@ import logging
 
 ENABLE_LOCAL_WAVDUMP = False
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 SAMPLE_RATE       = 16000
 FRAMES_PER_BUFFER = 16000 / 4
 
-NUM_FRAMES_PRE    = 1
-NUM_FRAMES_POST   = 0
+NUM_FRAMES_PRE    = 4
 
 STATE_IDLE     = 0
 STATE_SPEECH1  = 1
 STATE_SPEECH2  = 2
 STATE_SILENCE1 = 3
 STATE_SILENCE2 = 4
+STATE_SILENCE3 = 5
+STATE_SILENCE4 = 6
 
 RING_BUF_ENTRIES = 5 * 180 # 5 minutes max
 
@@ -210,12 +211,22 @@ while True:
         if vad:
             state = STATE_SPEECH2
         else:
+            state = STATE_SILENCE3
+    elif state == STATE_SILENCE3:
+        if vad:
+            state = STATE_SPEECH2
+        else:
+            state = STATE_SILENCE4
+    elif state == STATE_SILENCE4:
+        if vad:
+            state = STATE_SPEECH2
+        else:
             state = STATE_IDLE
 
             logging.info("*** END OF SPEECH at frame %3d (num: %5d) ***" % (ring_cur, audio_num))
 
             audio = []
-            for i in range(audio_num + NUM_FRAMES_PRE + NUM_FRAMES_POST):
+            for i in range(audio_num + NUM_FRAMES_PRE):
                 audio.extend(ring_buffer[(audio_start + i - NUM_FRAMES_PRE) % RING_BUF_ENTRIES])
 
             # print type(audio), type(audio[0]), repr(audio)
