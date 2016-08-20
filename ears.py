@@ -103,14 +103,14 @@ sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
 #
 
 home_path = expanduser("~")
-configfn  = home_path + "/.airc"
+configfn  = home_path + "/.halrc"
 
 config = ConfigParser.RawConfigParser()
 
 config.read(configfn)
 
-source    = config.get("audio", "source")
-volume    = int(config.get("audio", "volume"))
+source    = config.get("ears", "source")
+volume    = int(config.get("ears", "volume"))
 
 logging.debug ('HAL 9000 ears application started. Audio source: %s' % source)
 
@@ -139,8 +139,8 @@ logging.debug ('PARecorder initialized.')
 # zmq connection to asr server
 #
 
-asr_server = config.get("audio", "asr_server")
-asr_port   = int(config.get("audio", "asr_port"))
+asr_server = config.get("ears", "asr_server")
+asr_port   = int(config.get("ears", "asr_port"))
 
 zmq_context = zmq.Context()
 logging.debug ("Connecting to ZMQ ASR server %s:%s..." % (asr_server, asr_port))
