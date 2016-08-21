@@ -35,6 +35,7 @@ import ConfigParser
 from os.path import expanduser
 import array
 from time import time
+import traceback
 
 from pulseclient import PARecorder
 
@@ -63,9 +64,7 @@ STATE_SILENCE4 = 6
 
 RING_BUF_ENTRIES = 5 * 180 # 5 minutes max
 
-def _comm (cmd, arg):
-
-    global zmq_socket
+def _comm (zmq_socket, cmd, arg):
 
     logging.debug("_comm: %s %s" % (cmd, arg))
 
@@ -83,12 +82,25 @@ def _comm (cmd, arg):
         res = json.loads(message)
     except:
 
-        logging.error("tts_comm: EXCEPTION.")
+        logging.error("_comm: EXCEPTION.")
         traceback.print_exc()
 
         pass
 
     return res
+
+def _comm_asr (cmd, arg):
+
+    global zmq_socket_asr
+
+    return _comm(zmq_socket_asr, cmd, arg)
+
+def _comm_getty (cmd, arg):
+
+    global zmq_socket_getty
+
+    return _comm(zmq_socket_getty, cmd, arg)
+
 
 #
 # init
@@ -136,18 +148,43 @@ rec = PARecorder (source, SAMPLE_RATE, volume)
 logging.debug ('PARecorder initialized.')
 
 #
-# zmq connection to asr server
+# zmq connections
 #
 
-asr_server = config.get("ears", "asr_server")
-asr_port   = int(config.get("ears", "asr_port"))
+host_asr    = config.get("zmq", "host_asr")
+port_asr    = config.get("zmq", "port_asr")
+host_getty  = config.get('zmq', 'host_getty')
+port_getty  = config.get('zmq', 'port_getty')
+port_gettyp = config.get('zmq', 'port_gettyp')
 
 zmq_context = zmq.Context()
-logging.debug ("Connecting to ZMQ ASR server %s:%s..." % (asr_server, asr_port))
-zmq_socket = zmq_context.socket(zmq.REQ)
-zmq_socket.connect ("tcp://%s:%s" % (asr_server, asr_port))
+logging.debug ("Connecting to ZMQ ASR server %s:%s..." % (host_asr, port_asr))
+zmq_socket_asr = zmq_context.socket(zmq.REQ)
+zmq_socket_asr.connect ("tcp://%s:%s" % (host_asr, port_asr))
 
 logging.debug("conntected.")
+
+logging.debug ("Subscribing to ZMQ getty broadcasts on %s:%s..." % (host_getty, port_gettyp))
+
+zmq_socket_getty_sub = zmq_context.socket(zmq.SUB)
+zmq_socket_getty_sub.connect ("tcp://%s:%s" % (host_getty, port_gettyp))
+
+# messages we're interested in
+zmq_socket_getty_sub.setsockopt(zmq.SUBSCRIBE, 'LISTEN')
+
+logging.debug("subscribed.")
+
+logging.debug ("Connecting to ZMQ getty server %s:%s..." % (host_getty, port_getty))
+zmq_socket_getty = zmq_context.socket(zmq.REQ)
+zmq_socket_getty.connect ("tcp://%s:%s" % (host_getty, port_getty))
+
+logging.debug("conntected.")
+
+logging.debug("sending EARS_BOOT...")
+
+ears_enabled = _comm_getty ('EARS_BOOT', False)[0]
+
+logging.debug("sending EARS_BOOT done.")
 
 #
 # main
@@ -168,11 +205,22 @@ while True:
 
     logging.debug("%d samples, %5.2f s" % (len(samples), float(len(samples)) / float(SAMPLE_RATE)))
 
-    #  buf = array.array('B', samples).tostring()
+    # good time to recv broadcast messages
+    try:
+        msg = zmq_socket_getty_sub.recv(zmq.DONTWAIT)
+        cmd, data = msg.split(' ', 1)
+        data = json.loads(data)
+        logging.debug("received broadcast message: cmd=%s, data=%s" % (cmd, repr(data)))
 
-    #  logging.debug("len(samples)=%d, len(buf)=%d" % (len(samples), len(buf)))
+        if cmd == 'LISTEN':
+            ears_enabled = data[0]
 
-    #  ring_buffer[ring_cur] = numpy.fromstring(buf, dtype=numpy.int16)
+    except zmq.error.Again:
+        pass
+
+    if not ears_enabled:
+        continue
+
     ring_buffer[ring_cur] = samples
 
     logging.debug("VAD...")
@@ -231,7 +279,7 @@ while True:
 
             # print type(audio), type(audio[0]), repr(audio)
 
-            _comm ("REC", ','.join(["%d" % sample for sample in audio]))
+            _comm_asr ("REC", ','.join(["%d" % sample for sample in audio]))
 
             if ENABLE_LOCAL_WAVDUMP:
 
