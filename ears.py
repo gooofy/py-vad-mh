@@ -244,6 +244,7 @@ while True:
     elif state == STATE_SPEECH1:
         if vad: 
             logging.debug ("*** SPEECH DETECTED at frame %3d ***" % audio_start)
+            _comm_asr ("RECSTART", None)
             state = STATE_SPEECH2
         else:
             state = STATE_IDLE
