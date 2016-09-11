@@ -66,7 +66,7 @@ RING_BUF_ENTRIES = 5 * 180 # 5 minutes max
 
 def _comm (zmq_socket, cmd, arg):
 
-    logging.debug("_comm: %s %s" % (cmd, arg))
+    # logging.debug("_comm: %s %s" % (cmd, arg))
 
     res = None
 
@@ -88,12 +88,6 @@ def _comm (zmq_socket, cmd, arg):
         pass
 
     return res
-
-def _comm_asr (cmd, arg):
-
-    global zmq_socket_asr
-
-    return _comm(zmq_socket_asr, cmd, arg)
 
 def _comm_getty (cmd, arg):
 
@@ -151,18 +145,11 @@ logging.debug ('PARecorder initialized.')
 # zmq connections
 #
 
-host_asr    = config.get("zmq", "host_asr")
-port_asr    = config.get("zmq", "port_asr")
 host_getty  = config.get('zmq', 'host_getty')
 port_getty  = config.get('zmq', 'port_getty')
 port_gettyp = config.get('zmq', 'port_gettyp')
 
 zmq_context = zmq.Context()
-logging.debug ("Connecting to ZMQ ASR server %s:%s..." % (host_asr, port_asr))
-zmq_socket_asr = zmq_context.socket(zmq.REQ)
-zmq_socket_asr.connect ("tcp://%s:%s" % (host_asr, port_asr))
-
-logging.debug("conntected.")
 
 logging.debug ("Subscribing to ZMQ getty broadcasts on %s:%s..." % (host_getty, port_gettyp))
 
@@ -244,7 +231,7 @@ while True:
     elif state == STATE_SPEECH1:
         if vad: 
             logging.debug ("*** SPEECH DETECTED at frame %3d ***" % audio_start)
-            _comm_asr ("RECSTART", None)
+            _comm_getty ("RECSTART", None)
             state = STATE_SPEECH2
         else:
             state = STATE_IDLE
@@ -280,7 +267,7 @@ while True:
 
             # print type(audio), type(audio[0]), repr(audio)
 
-            _comm_asr ("REC", ','.join(["%d" % sample for sample in audio]))
+            _comm_getty ("REC", ','.join(["%d" % sample for sample in audio]))
 
             if ENABLE_LOCAL_WAVDUMP:
 
