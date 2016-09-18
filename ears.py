@@ -36,6 +36,7 @@ from os.path import expanduser
 import array
 from time import time
 import traceback
+from setproctitle import setproctitle
 
 from pulseclient import PARecorder
 
@@ -46,8 +47,11 @@ import json
 import logging
 
 ENABLE_LOCAL_WAVDUMP = False
+PROC_TITLE = 'hal_ears'
 
 logging.basicConfig(level=logging.DEBUG)
+
+setproctitle (PROC_TITLE)
 
 SAMPLE_RATE       = 16000
 FRAMES_PER_BUFFER = 16000 / 4
