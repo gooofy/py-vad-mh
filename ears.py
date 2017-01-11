@@ -197,10 +197,17 @@ def send_audio (slot, finalize):
 
     logging.debug ("RECAUDIO slot=%d, finalize=%s" % (slot, finalize))
 
+    audio = map(lambda n: int(n), ring_buffer[slot])
+
+    data = {'ts': time(), 'audio': audio}
+
+    # print type(audio[0]), audio[0]
+
     if finalize:
-        _comm_getty ("RECFINAL", ','.join(["%d" % sample for sample in ring_buffer[slot]]))
+        _comm_getty ("RECFINAL", data)
     else:
-        _comm_getty ("RECAUDIO", ','.join(["%d" % sample for sample in ring_buffer[slot]]))
+        #_comm_getty ("RECAUDIO", ','.join(["%d" % sample for sample in ring_buffer[slot]]))
+        _comm_getty ("RECAUDIO", data)
 
 while True:
 
