@@ -77,10 +77,10 @@ def _comm (zmq_socket, cmd, arg):
 
         rq = json.dumps ([cmd, arg])
 
-        #print "Sending request %s" % rq
+        # print "_comm: Sending request %s" % rq
         zmq_socket.send (rq)
 
-        #  Get the reply.
+        # print "_comm: Get the reply..."
         message = zmq_socket.recv()
         res = json.loads(message)
     except:
