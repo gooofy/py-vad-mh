@@ -52,20 +52,32 @@ logging.basicConfig(level=logging.DEBUG)
 
 setproctitle (PROC_TITLE)
 
-SAMPLE_RATE       = 16000
-FRAMES_PER_BUFFER = 16000 / 4
+SAMPLE_RATE           = 16000
+BUFFERS_PER_SECOND    = 4
+FRAMES_PER_BUFFER     = SAMPLE_RATE / BUFFERS_PER_SECOND
 
-NUM_FRAMES_PRE    = 4
+RING_BUF_ENTRIES      =  5 * 60 * BUFFERS_PER_SECOND # 5 minutes max
+MAX_ATT_BUF_ENTRIES   = 12 * BUFFERS_PER_SECOND      # max 12 sec attention span
 
-STATE_IDLE     = 0
-STATE_SPEECH1  = 1
-STATE_SPEECH2  = 2
-STATE_SILENCE1 = 3
-STATE_SILENCE2 = 4
-STATE_SILENCE3 = 5
-STATE_SILENCE4 = 6
+NUM_FRAMES_PRE        = 4
 
-RING_BUF_ENTRIES = 5 * 180 # 5 minutes max
+STATE_IDLE            =  0
+
+STATE_SPEECH1         =  1
+STATE_SPEECH2         =  2
+
+STATE_SILENCE1        =  3
+STATE_SILENCE2        =  4
+STATE_SILENCE3        =  5
+STATE_SILENCE4        =  6
+
+STATE_IGNORE1         = 10
+STATE_IGNORE2         = 11
+STATE_IGNORE3         = 12
+STATE_IGNORE4         = 13
+STATE_IGNORE5         = 14
+STATE_IGNORE6         = 15
+
 
 def _comm (zmq_socket, cmd, arg):
 
@@ -243,7 +255,7 @@ while True:
 
     end_time = time()
 
-    logging.debug("VAD: ring_cur=%d, vad=%s, avg_intensity=%f, delay=%f" % (ring_cur, vad, avg_intensity, end_time - start_time))
+    logging.debug("VAD: %05d ring_cur=%d, vad=%s, avg_intensity=%f, delay=%f" % (state, ring_cur, vad, avg_intensity, end_time - start_time))
      
     if state == STATE_IDLE:
         if vad:
@@ -261,10 +273,24 @@ while True:
             state = STATE_SPEECH2
         else:
             state = STATE_IDLE
+
     elif state == STATE_SPEECH2:
-        send_audio (ring_cur, False)
-        if not vad:
-            state = STATE_SILENCE1
+
+        # check if attention span is over
+        if ring_cur < audio_start:
+            num_entries = ring_cur + RING_BUF_ENTRIES - audio_start + 1
+        else:
+            num_entries = ring_cur - audio_start + 1
+
+        if num_entries > MAX_ATT_BUF_ENTRIES:
+            logging.info("*** START OF IGNORE at frame %3d ***" % (ring_cur))
+            send_audio (ring_cur, True)
+            state = STATE_IGNORE1
+        else:
+            send_audio (ring_cur, False)
+            if not vad:
+                state = STATE_SILENCE1
+
     elif state == STATE_SILENCE1:
         send_audio (ring_cur, False)
         if vad:
@@ -292,6 +318,36 @@ while True:
             send_audio (ring_cur, True)
 
             logging.info("*** END OF SPEECH at frame %3d ***" % (ring_cur))
+
+    elif state == STATE_IGNORE1:
+        if not vad:
+            state = STATE_IGNORE2
+    elif state == STATE_IGNORE2:
+        if not vad:
+            state = STATE_IGNORE3
+        else:
+            state = STATE_IGNORE1
+    elif state == STATE_IGNORE3:
+        if not vad:
+            state = STATE_IGNORE4
+        else:
+            state = STATE_IGNORE1
+    elif state == STATE_IGNORE4:
+        if not vad:
+            state = STATE_IGNORE5
+        else:
+            state = STATE_IGNORE1
+    elif state == STATE_IGNORE5:
+        if not vad:
+            state = STATE_IGNORE6
+        else:
+            state = STATE_IGNORE1
+    elif state == STATE_IGNORE6:
+        if not vad:
+            logging.info("*** END OF IGNORE at frame %3d ***" % (ring_cur))
+            state = STATE_IDLE
+        else:
+            state = STATE_IGNORE1
 
     cnt       += 1
     ring_cur   = (ring_cur + 1) % RING_BUF_ENTRIES
