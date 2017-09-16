@@ -116,10 +116,17 @@ class PARecorder(object):
             pa_stream_set_read_callback(pa_stream,
                                         self._stream_read_cb,
                                         source_info.index)
+
+            # flags = PA_STREAM_NOFLAGS
+            flags = PA_STREAM_ADJUST_LATENCY
+            
+            # buffer_attr = None
+            buffer_attr = pa_buffer_attr(-1, -1, -1, -1, fragsize=self._frames_per_buffer*2)
+
             pa_stream_connect_record(pa_stream,
                                      source_info.name,
-                                     None,
-                                     PA_STREAM_NOFLAGS)
+                                     buffer_attr,
+                                     flags)
 
     def stream_read_cb(self, stream, length, index_incr):
         data = c_void_p()
