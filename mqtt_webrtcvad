@@ -1,0 +1,411 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*- 
+
+#
+# Copyright 2013, 2014, 2016, 2017 Guenter Bartsch
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Lesser General Public License for more details.
+# 
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+#
+# Voice Activity Detection (VAD) daemon
+#
+# listens on pulseaudio connected audio input for voice activity
+# once detected, publishes recorded audio frames via MQTT
+#
+
+#
+# based on :
+# https://mattze96.safe-ws.de/blog/?p=640
+#
+
+import StringIO
+import wave
+import ctypes
+import sys
+import struct
+import numpy
+import os
+import ConfigParser
+import array
+import traceback
+import json
+import logging
+import datetime
+
+from time         import time
+from pulseclient  import PARecorder
+from nltools      import misc
+from optparse     import OptionParser
+
+import paho.mqtt.client as mqtt
+import VAD
+import webrtcvad
+
+PROC_TITLE            = 'mqtt_vad'
+TOPIC_INPUT_LISTEN    = 'hal/input/listen'
+TOPIC_INPUT_AUDIO     = 'hal/input/audio'
+RETRY_DELAY           = 3
+
+SAMPLE_RATE           = 16000
+BUFFER_DURATION       = 30 # ms
+FRAMES_PER_BUFFER     = SAMPLE_RATE * BUFFER_DURATION / 1000
+
+RING_BUF_ENTRIES      =  5 * 60 * 1000 / BUFFER_DURATION # 5 minutes max
+
+MIN_BUF_ENTRIES       =            400 / BUFFER_DURATION # min  0.4  sec utterance
+MAX_BUF_ENTRIES       =      12 * 1000 / BUFFER_DURATION # max 12.0  sec utterance
+MAX_GAP               =            600 / BUFFER_DURATION # max  0.6  sec gaps in utterance
+
+STATE_IDLE            =  0
+
+STATE_PRE_SPEECH      =  1
+STATE_PRE_GAP         =  2
+
+STATE_SPEECH          =  3
+STATE_GAP             =  4
+
+STATE_IGNORE          =  5
+STATE_IGNORE_GAP      =  6
+
+DEFAULTS = {
+            'broker_host'   : 'localhost',
+            'broker_port'   : '1883',
+            'broker_user'   : '',
+            'broker_pw'     : '',
+            'source'        : 'CM108',
+            'volume'        : 150,
+            'aggressiveness': 2,
+           }
+
+state       = STATE_IDLE
+audio_sent  = 0
+buf         = []
+buf_sent    = 0
+
+vad_enabled = True
+
+#
+# MQTT
+#
+
+def on_connect(client, userdata, flag, rc):
+    if rc==0:
+        logging.info("connected OK Returned code=%s" % repr(rc))
+        client.subscribe(TOPIC_INPUT_LISTEN)
+    else:
+        logging.error("Bad connection Returned code=%s" % repr(rc))
+
+msg_cnt = 0
+
+def on_message(client, userdata, message):
+
+    global msg_cnt, vad_enabled
+
+    # logging.debug( "message received %s" % str(message.payload.decode("utf-8")))a
+    msg_cnt += 1
+    logging.debug( "message received #%06d" % msg_cnt)
+    logging.debug( "message topic=%s" % message.topic)
+    logging.debug( "message qos=%s" % message.qos)
+    logging.debug( "message retain flag=%s" % message.retain)
+
+    try:
+
+        if message.topic == TOPIC_INPUT_LISTEN:
+
+            # logging.debug("OUTPUT HTML: '%s'" % message.payload)
+
+            vad_enabled = json.loads(message.payload)
+
+    except:
+        logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
+
+# def _comm (zmq_socket, cmd, arg):
+# 
+#     # logging.debug("_comm: %s %s" % (cmd, arg))
+# 
+#     res = None
+# 
+#     try:
+# 
+#         rq = json.dumps ([cmd, arg])
+# 
+#         # print "_comm: Sending request %s" % rq
+#         zmq_socket.send (rq)
+# 
+#         # print "_comm: Get the reply..."
+#         message = zmq_socket.recv()
+#         res = json.loads(message)
+#     except:
+# 
+#         logging.error("_comm: EXCEPTION.")
+#         traceback.print_exc()
+# 
+#         pass
+# 
+#     return res
+# 
+# def _comm_getty (cmd, arg):
+# 
+#     global zmq_socket_getty
+# 
+#     return _comm(zmq_socket_getty, cmd, arg)
+
+# 
+#     global ring_buffer
+# 
+#     slot = slot % RING_BUF_ENTRIES
+# 
+#     if ring_buffer[slot] is None:
+#         return
+# 
+#     logging.debug ("RECAUDIO slot=%d, finalize=%s" % (slot, finalize))
+# 
+#     audio = map(lambda n: int(n), ring_buffer[slot])
+# 
+#     data = {'ts': time(), 'audio': audio}
+# 
+#     # print type(audio[0]), audio[0]
+# 
+#     if finalize:
+#         _comm_getty ("RECFINAL", data)
+#     else:
+#         #_comm_getty ("RECAUDIO", ','.join(["%d" % sample for sample in ring_buffer[slot]]))
+#         _comm_getty ("RECAUDIO", data)
+
+def ring_len(idx1, idx2):
+    if idx2 < idx1:
+        idx2 += RING_BUF_ENTRIES
+    return idx2 - idx1
+
+def send_audio_buf (slot, finalize):
+
+    global buf, vad_enabled, client, buf
+
+    if not vad_enabled:
+        return
+
+    logging.debug ('    sending audio buf #%5d finalize=%s' % (slot, repr(finalize)))
+
+    data = {'final': finalize, 'ts': datetime.datetime.now().isoformat(), 'pcm': buf[slot].tolist()}
+    # logging.debug ('    sending audio buf #%5d finalize=%s data=%s' % (slot, repr(finalize), data))
+    client.publish(TOPIC_INPUT_AUDIO, json.dumps(data))
+
+def send_audio (finalize):
+
+    global audio_sent, buf, buf_sent
+
+    buf_max = len(buf)-1
+
+    while buf_sent <= buf_max:
+        send_audio_buf (buf_sent, finalize and (buf_sent == buf_max))
+        buf_sent += 1
+
+#
+# init
+#
+
+misc.init_app(PROC_TITLE)
+
+#
+# load config, set up global variables
+#
+
+config = misc.load_config('.halrc', defaults = DEFAULTS)
+
+broker_host    = config.get   ("mqtt", "broker_host")
+broker_port    = config.getint("mqtt", "broker_port")
+broker_user    = config.get   ("mqtt", "broker_user")
+broker_pw      = config.get   ("mqtt", "broker_pw")
+
+source         = config.get   ("vad", "source")
+volume         = config.getint("vad", "volume")
+aggressiveness = config.getint("vad", "aggressiveness")
+
+#
+# cmdline, logging
+#
+
+parser = OptionParser("usage: %prog [options]")
+
+parser.add_option ("-v", "--verbose", action="store_true", dest="verbose",
+                   help="verbose output")
+
+parser.add_option ("-H", "--host", dest="host", type = "string", default=broker_host,
+                   help="broker host, default: %s" % broker_host)
+
+parser.add_option ("-p", "--port", dest="port", type = "int", default=broker_port,
+                   help="broker port, default: %d" % broker_port)
+
+(options, args) = parser.parse_args()
+
+if options.verbose:
+    logging.basicConfig(level=logging.DEBUG)
+else:
+    logging.basicConfig(level=logging.INFO)
+
+
+logging.info ('HAL 9000 VAD application started. Audio source: %s' % source)
+
+#
+# pulseaudio recorder
+#
+
+rec = PARecorder (source, SAMPLE_RATE, volume)
+
+logging.debug ('PARecorder initialized.')
+
+#
+# mqtt connect
+#
+
+logging.debug ('connecting to MQTT broker %s:%d ...' % (broker_host, broker_port))
+
+client = mqtt.Client()
+client.username_pw_set(broker_user, broker_pw)
+# client.on_message=on_message
+# client.on_connect=on_connect
+
+connected = False
+while not connected:
+    try:
+
+        client.connect(broker_host, port=broker_port, keepalive=10)
+
+        connected = True
+
+    except:
+        logging.error('connection to %s:%d failed. retry in %d seconds...' % (broker_host, broker_port, RETRY_DELAY))
+        time.sleep(RETRY_DELAY)
+
+logging.debug ('connecting to MQTT broker %s:%d ... connected.' % (broker_host, broker_port))
+
+client.loop_start()
+
+#
+# VAD
+#
+
+vad = webrtcvad.Vad()
+vad.set_mode(aggressiveness)
+
+#
+# main
+#
+
+rec.start_recording(FRAMES_PER_BUFFER)
+
+while True:
+
+    logging.debug ("recording...")
+
+    samples = rec.get_samples()
+
+    # logging.debug("%d samples, %5.2f s" % (len(samples), float(len(samples)) / float(SAMPLE_RATE)))
+
+    if not vad_enabled:
+        continue
+
+    cur_frame = samples
+    # ring_buffer[ring_cur] = samples.tobytes()
+
+    # logging.debug("VAD, buffer: %s ..." % samples.__class__)
+
+    start_time = time()
+
+    vad_res = vad.is_speech(samples.tobytes(), SAMPLE_RATE)
+
+    end_time = time()
+
+    # if vad_res:
+    #     logging.info("VAD: ring_cur=%d, vad_res=%s, delay=%f" % (ring_cur, vad_res, end_time - start_time))
+    # else:
+    #     logging.debug("VAD: len(buf)=%d, vad_res=%s, delay=%f" % (len(buf), vad_res, end_time - start_time))
+     
+    if state == STATE_IDLE:
+        if vad_res:
+            state       = STATE_PRE_SPEECH
+            buf         = [ cur_frame ]
+            buf_sent    = 0
+
+    elif state == STATE_PRE_SPEECH:
+        buf.append(cur_frame)
+        if vad_res: 
+            if len (buf) > MIN_BUF_ENTRIES:
+                logging.debug ("*** SPEECH DETECTED at frame %3d ***" % len(buf))
+                state = STATE_SPEECH
+
+        else:
+            state     = STATE_PRE_GAP
+            gap_start = len(buf)
+
+    elif state == STATE_PRE_GAP:
+        buf.append(cur_frame)
+
+        if vad_res:
+            state = STATE_PRE_SPEECH
+
+        else:
+            gap_len = len(buf) - gap_start
+            if gap_len > MAX_GAP:
+                logging.debug ("*** PRE GAP (%d) TOO LONG at frame %3d ***" % (gap_len, len(buf)))
+                state = STATE_IDLE
+
+    elif state == STATE_SPEECH:
+        buf.append(cur_frame)
+
+        # check if attention span is over
+        if len (buf) > MAX_BUF_ENTRIES:
+            logging.debug ("*** START OF IGNORE at frame %3d ***" % len(buf))
+            state = STATE_IGNORE
+            send_audio(True)
+
+        else:
+            send_audio(False)
+            if not vad_res:
+                state     = STATE_GAP
+                gap_start = len(buf)
+
+    elif state == STATE_GAP:
+        buf.append(cur_frame)
+
+        if vad_res:
+            state = STATE_SPEECH
+            send_audio(False)
+
+        else:
+            gap_len = len(buf) - gap_start
+            if gap_len > MAX_GAP:
+                logging.debug ("*** GAP (%d) TOO LONG at frame %3d ***" % (gap_len, len(buf)))
+                state = STATE_IDLE
+                send_audio(True)
+            else:
+                send_audio(False)
+
+    elif state == STATE_IGNORE:
+        buf.append(cur_frame)
+        if not vad_res:
+            state     = STATE_IGNORE_GAP
+            gap_start = len(buf)
+
+    elif state == STATE_IGNORE_GAP:
+        buf.append(cur_frame)
+        if vad_res:
+            state = STATE_IGNORE
+        else:
+            gap_len = len(buf) - gap_start
+            if gap_len > MAX_GAP:
+                logging.debug ("*** end of ignore at frame %3d ***" % len(buf))
+                state = STATE_IDLE
+

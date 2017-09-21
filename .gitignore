@@ -7,4 +7,5 @@ syntax: glob
 *.c
 build
 tmp
+old
 Profile.prof
