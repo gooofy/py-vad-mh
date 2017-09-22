@@ -66,7 +66,7 @@ RING_BUF_ENTRIES      =  5 * 60 * 1000 / BUFFER_DURATION # 5 minutes max
 
 MIN_BUF_ENTRIES       =            400 / BUFFER_DURATION # min  0.4  sec utterance
 MAX_BUF_ENTRIES       =      12 * 1000 / BUFFER_DURATION # max 12.0  sec utterance
-MAX_GAP               =            600 / BUFFER_DURATION # max  0.6  sec gaps in utterance
+MAX_GAP               =            400 / BUFFER_DURATION # max  0.4  sec gaps in utterance
 
 STATE_IDLE            =  0
 
@@ -130,59 +130,6 @@ def on_message(client, userdata, message):
 
     except:
         logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
-
-# def _comm (zmq_socket, cmd, arg):
-# 
-#     # logging.debug("_comm: %s %s" % (cmd, arg))
-# 
-#     res = None
-# 
-#     try:
-# 
-#         rq = json.dumps ([cmd, arg])
-# 
-#         # print "_comm: Sending request %s" % rq
-#         zmq_socket.send (rq)
-# 
-#         # print "_comm: Get the reply..."
-#         message = zmq_socket.recv()
-#         res = json.loads(message)
-#     except:
-# 
-#         logging.error("_comm: EXCEPTION.")
-#         traceback.print_exc()
-# 
-#         pass
-# 
-#     return res
-# 
-# def _comm_getty (cmd, arg):
-# 
-#     global zmq_socket_getty
-# 
-#     return _comm(zmq_socket_getty, cmd, arg)
-
-# 
-#     global ring_buffer
-# 
-#     slot = slot % RING_BUF_ENTRIES
-# 
-#     if ring_buffer[slot] is None:
-#         return
-# 
-#     logging.debug ("RECAUDIO slot=%d, finalize=%s" % (slot, finalize))
-# 
-#     audio = map(lambda n: int(n), ring_buffer[slot])
-# 
-#     data = {'ts': time(), 'audio': audio}
-# 
-#     # print type(audio[0]), audio[0]
-# 
-#     if finalize:
-#         _comm_getty ("RECFINAL", data)
-#     else:
-#         #_comm_getty ("RECAUDIO", ','.join(["%d" % sample for sample in ring_buffer[slot]]))
-#         _comm_getty ("RECAUDIO", data)
 
 def ring_len(idx1, idx2):
     if idx2 < idx1:
