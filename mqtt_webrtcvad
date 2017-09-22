@@ -54,8 +54,8 @@ import VAD
 import webrtcvad
 
 PROC_TITLE            = 'mqtt_vad'
-TOPIC_INPUT_LISTEN    = 'hal/input/listen'
-TOPIC_INPUT_AUDIO     = 'hal/input/audio'
+TOPIC_INPUT_LISTEN    = 'ai/input/listen'
+TOPIC_INPUT_AUDIO     = 'ai/input/audio'
 RETRY_DELAY           = 3
 
 SAMPLE_RATE           = 16000
@@ -124,7 +124,7 @@ def on_message(client, userdata, message):
 
         if message.topic == TOPIC_INPUT_LISTEN:
 
-            # logging.debug("OUTPUT HTML: '%s'" % message.payload)
+            logging.debug("ai/input/listen: '%s'" % message.payload)
 
             vad_enabled = json.loads(message.payload)
 
@@ -274,8 +274,8 @@ logging.debug ('connecting to MQTT broker %s:%d ...' % (broker_host, broker_port
 
 client = mqtt.Client()
 client.username_pw_set(broker_user, broker_pw)
-# client.on_message=on_message
-# client.on_connect=on_connect
+client.on_message=on_message
+client.on_connect=on_connect
 
 connected = False
 while not connected:
