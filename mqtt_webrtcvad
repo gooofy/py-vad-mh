@@ -54,8 +54,9 @@ import VAD
 import webrtcvad
 
 PROC_TITLE            = 'mqtt_vad'
-TOPIC_INPUT_LISTEN    = 'ai/input/listen'
+TOPIC_CONFIG          = 'ai/config'
 TOPIC_INPUT_AUDIO     = 'ai/input/audio'
+TOPIC_BOOT            = 'hal/boot'
 RETRY_DELAY           = 3
 
 SAMPLE_RATE           = 16000
@@ -103,7 +104,7 @@ vad_enabled = True
 def on_connect(client, userdata, flag, rc):
     if rc==0:
         logging.info("connected OK Returned code=%s" % repr(rc))
-        client.subscribe(TOPIC_INPUT_LISTEN)
+        client.subscribe(TOPIC_CONFIG)
     else:
         logging.error("Bad connection Returned code=%s" % repr(rc))
 
@@ -122,11 +123,11 @@ def on_message(client, userdata, message):
 
     try:
 
-        if message.topic == TOPIC_INPUT_LISTEN:
+        if message.topic == TOPIC_CONFIG:
 
             logging.debug("ai/input/listen: '%s'" % message.payload)
 
-            vad_enabled = json.loads(message.payload)
+            vad_enabled = json.loads(message.payload)['listen']
 
     except:
         logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
@@ -138,14 +139,14 @@ def ring_len(idx1, idx2):
 
 def send_audio_buf (slot, finalize):
 
-    global buf, vad_enabled, client, buf
+    global buf, vad_enabled, client, buf, loc
 
     if not vad_enabled:
         return
 
     logging.debug ('    sending audio buf #%5d finalize=%s' % (slot, repr(finalize)))
 
-    data = {'final': finalize, 'ts': datetime.datetime.now().isoformat(), 'pcm': buf[slot].tolist()}
+    data = {'final': finalize, 'ts': datetime.datetime.now().isoformat(), 'pcm': buf[slot].tolist(), 'loc': loc}
     # logging.debug ('    sending audio buf #%5d finalize=%s data=%s' % (slot, repr(finalize), data))
     client.publish(TOPIC_INPUT_AUDIO, json.dumps(data))
 
@@ -176,9 +177,10 @@ broker_port    = config.getint("mqtt", "broker_port")
 broker_user    = config.get   ("mqtt", "broker_user")
 broker_pw      = config.get   ("mqtt", "broker_pw")
 
-source         = config.get   ("vad", "source")
-volume         = config.getint("vad", "volume")
-aggressiveness = config.getint("vad", "aggressiveness")
+loc            = config.get   ("vad",  "loc")
+source         = config.get   ("vad",  "source")
+volume         = config.getint("vad",  "volume")
+aggressiveness = config.getint("vad",  "aggressiveness")
 
 #
 # cmdline, logging
@@ -251,6 +253,7 @@ vad.set_mode(aggressiveness)
 # main
 #
 
+client.publish(TOPIC_BOOT, 'vad')
 rec.start_recording(FRAMES_PER_BUFFER)
 
 while True:
