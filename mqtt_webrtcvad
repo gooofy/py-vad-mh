@@ -54,7 +54,7 @@ import VAD
 import webrtcvad
 
 PROC_TITLE            = 'mqtt_vad'
-TOPIC_INPUT_LISTEN    = 'ai/input/listen'
+TOPIC_CONFIG          = 'ai/config'
 TOPIC_INPUT_AUDIO     = 'ai/input/audio'
 TOPIC_BOOT            = 'hal/boot'
 RETRY_DELAY           = 3
@@ -104,7 +104,7 @@ vad_enabled = True
 def on_connect(client, userdata, flag, rc):
     if rc==0:
         logging.info("connected OK Returned code=%s" % repr(rc))
-        client.subscribe(TOPIC_INPUT_LISTEN)
+        client.subscribe(TOPIC_CONFIG)
     else:
         logging.error("Bad connection Returned code=%s" % repr(rc))
 
@@ -123,11 +123,11 @@ def on_message(client, userdata, message):
 
     try:
 
-        if message.topic == TOPIC_INPUT_LISTEN:
+        if message.topic == TOPIC_CONFIG:
 
             logging.debug("ai/input/listen: '%s'" % message.payload)
 
-            vad_enabled = json.loads(message.payload)
+            vad_enabled = json.loads(message.payload)['listen']
 
     except:
         logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
