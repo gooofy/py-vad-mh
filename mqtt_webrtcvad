@@ -50,7 +50,6 @@ from nltools      import misc
 from optparse     import OptionParser
 
 import paho.mqtt.client as mqtt
-import VAD
 import webrtcvad
 
 PROC_TITLE            = 'mqtt_vad'
