@@ -25,11 +25,6 @@
 # once detected, publishes recorded audio frames via MQTT
 #
 
-#
-# based on :
-# https://mattze96.safe-ws.de/blog/?p=640
-#
-
 import StringIO
 import wave
 import ctypes
@@ -44,10 +39,10 @@ import json
 import logging
 import datetime
 
-from time         import time
-from pulseclient  import PARecorder
-from nltools      import misc
-from optparse     import OptionParser
+from time                  import time
+from nltools               import misc
+from nltools.pulserecorder import PulseRecorder
+from optparse              import OptionParser
 
 import paho.mqtt.client as mqtt
 import webrtcvad
@@ -210,9 +205,9 @@ logging.info ('HAL 9000 VAD application started. Audio source: %s' % source)
 # pulseaudio recorder
 #
 
-rec = PARecorder (source, SAMPLE_RATE, volume)
+rec = PulseRecorder (source, SAMPLE_RATE, volume)
 
-logging.debug ('PARecorder initialized.')
+logging.debug ('OulseRecorder initialized.')
 
 #
 # mqtt connect
