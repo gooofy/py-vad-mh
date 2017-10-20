@@ -207,7 +207,7 @@ logging.info ('HAL 9000 VAD application started. Audio source: %s' % source)
 
 rec = PulseRecorder (source, SAMPLE_RATE, volume)
 
-logging.debug ('OulseRecorder initialized.')
+logging.debug ('PulseRecorder initialized.')
 
 #
 # mqtt connect
