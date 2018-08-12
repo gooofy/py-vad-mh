@@ -34,18 +34,15 @@ import paho.mqtt.client as mqtt
 from time                  import time
 from nltools               import misc
 from nltools.pulserecorder import PulseRecorder
-from nltools.vad           import VAD, BUFFER_DURATION
+from nltools.vad           import VAD
 from optparse              import OptionParser
 
 
 PROC_TITLE            = 'mqtt_vad'
-TOPIC_CONFIG          = 'ai/config'
+# TOPIC_CONFIG          = 'ai/config'
 TOPIC_INPUT_AUDIO     = 'ai/input/audio'
 TOPIC_BOOT            = 'hal/boot'
 RETRY_DELAY           = 3
-
-SAMPLE_RATE           = 16000
-FRAMES_PER_BUFFER     = SAMPLE_RATE * BUFFER_DURATION / 1000
 
 DEFAULTS = {
             'broker_host'   : 'localhost',
@@ -66,7 +63,7 @@ vad_enabled = True
 def on_connect(client, userdata, flag, rc):
     if rc==0:
         logging.info("connected OK Returned code=%s" % repr(rc))
-        client.subscribe(TOPIC_CONFIG)
+        # client.subscribe(TOPIC_CONFIG)
     else:
         logging.error("Bad connection Returned code=%s" % repr(rc))
 
@@ -83,16 +80,16 @@ def on_message(client, userdata, message):
     logging.debug( "message qos=%s" % message.qos)
     logging.debug( "message retain flag=%s" % message.retain)
 
-    try:
+    # try:
 
-        if message.topic == TOPIC_CONFIG:
+    #     if message.topic == TOPIC_CONFIG:
 
-            logging.debug("ai/input/listen: '%s'" % message.payload)
+    #         logging.debug("ai/input/listen: '%s'" % message.payload)
 
-            vad_enabled = json.loads(message.payload)['listen']
+    #         vad_enabled = json.loads(message.payload)['listen']
 
-    except:
-        logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
+    # except:
+    #     logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
 
 
 #
@@ -146,7 +143,7 @@ logging.info ('HAL 9000 VAD application started. Audio source: %s' % source)
 # pulseaudio recorder
 #
 
-rec = PulseRecorder (source, SAMPLE_RATE, volume)
+rec = PulseRecorder (source_name=source, volume=volume)
 
 logging.debug ('PulseRecorder initialized.')
 
@@ -181,14 +178,14 @@ client.loop_start()
 # VAD
 #
 
-vad = VAD(aggressiveness=aggressiveness, sample_rate=SAMPLE_RATE)
+vad = VAD(aggressiveness=aggressiveness)
 
 #
 # main
 #
 
 client.publish(TOPIC_BOOT, 'vad')
-rec.start_recording(FRAMES_PER_BUFFER)
+rec.start_recording()
 
 while True:
 
