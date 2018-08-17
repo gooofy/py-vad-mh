@@ -39,7 +39,7 @@ from optparse              import OptionParser
 
 
 PROC_TITLE            = 'mqtt_vad'
-# TOPIC_CONFIG          = 'ai/config'
+TOPIC_STATE           = 'ai/state'
 TOPIC_INPUT_AUDIO     = 'ai/input/audio'
 TOPIC_BOOT            = 'hal/boot'
 RETRY_DELAY           = 3
@@ -63,7 +63,7 @@ vad_enabled = True
 def on_connect(client, userdata, flag, rc):
     if rc==0:
         logging.info("connected OK Returned code=%s" % repr(rc))
-        # client.subscribe(TOPIC_CONFIG)
+        client.subscribe(TOPIC_STATE)
     else:
         logging.error("Bad connection Returned code=%s" % repr(rc))
 
@@ -80,16 +80,16 @@ def on_message(client, userdata, message):
     logging.debug( "message qos=%s" % message.qos)
     logging.debug( "message retain flag=%s" % message.retain)
 
-    # try:
+    try:
 
-    #     if message.topic == TOPIC_CONFIG:
+        if message.topic == TOPIC_STATE:
 
-    #         logging.debug("ai/input/listen: '%s'" % message.payload)
+            logging.debug("%s: '%s'" % (message.topic, message.payload))
 
-    #         vad_enabled = json.loads(message.payload)['listen']
+            vad_enabled = json.loads(message.payload)['do_listen']
 
-    # except:
-    #     logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
+    except:
+        logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
 
 
 #
