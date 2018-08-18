@@ -37,7 +37,6 @@ from nltools.pulserecorder import PulseRecorder
 from nltools.vad           import VAD
 from optparse              import OptionParser
 
-
 PROC_TITLE            = 'mqtt_vad'
 TOPIC_STATE           = 'ai/state'
 TOPIC_INPUT_AUDIO     = 'ai/input/audio'
@@ -54,8 +53,6 @@ DEFAULTS = {
             'aggressiveness': 2,
            }
 
-vad_enabled = True
-
 #
 # MQTT
 #
@@ -67,30 +64,42 @@ def on_connect(client, userdata, flag, rc):
     else:
         logging.error("Bad connection Returned code=%s" % repr(rc))
 
-msg_cnt = 0
+def on_disconnect(client, userdata, rc):
+    global connected
+    logging.info("Got disconnected rc=%s" % repr(rc))
+    connected = False
 
 def on_message(client, userdata, message):
 
-    global msg_cnt, vad_enabled
+    global listening
 
     # logging.debug( "message received %s" % str(message.payload.decode("utf-8")))a
-    msg_cnt += 1
-    logging.debug( "message received #%06d" % msg_cnt)
-    logging.debug( "message topic=%s" % message.topic)
-    logging.debug( "message qos=%s" % message.qos)
-    logging.debug( "message retain flag=%s" % message.retain)
 
     try:
 
         if message.topic == TOPIC_STATE:
 
-            logging.debug("%s: '%s'" % (message.topic, message.payload))
+            logging.debug("on_message %s: '%s'" % (message.topic, message.payload))
 
-            vad_enabled = json.loads(message.payload)['do_listen']
+            do_listen = json.loads(message.payload)['do_listen']
 
+            if do_listen != listening:
+
+                listening = do_listen
+                if listening:
+                    logging.debug ('on_message %s: start_recording' % message.topic)
+                    rec.start_recording()
+                else:
+                    logging.debug ('on_message %s: stop_recording' % message.topic)
+                    rec.stop_recording()
+
+        else:
+            logging.warn('on_message %s: unhandled topic' % message.topic)
+
+    except (KeyboardInterrupt, SystemExit):
+            raise
     except:
-        logging.error('EXCEPTION CAUGHT %s' % traceback.format_exc())
-
+        logging.error('on_message %s: EXCEPTION CAUGHT %s' % (message.topic, traceback.format_exc()))
 
 #
 # init
@@ -144,7 +153,6 @@ logging.info ('HAL 9000 VAD application started. Audio source: %s' % source)
 #
 
 rec = PulseRecorder (source_name=source, volume=volume)
-
 logging.debug ('PulseRecorder initialized.')
 
 #
@@ -157,22 +165,9 @@ client = mqtt.Client()
 client.username_pw_set(broker_user, broker_pw)
 client.on_message=on_message
 client.on_connect=on_connect
+client.on_disconnect=on_disconnect
 
 connected = False
-while not connected:
-    try:
-
-        client.connect(broker_host, port=broker_port, keepalive=10)
-
-        connected = True
-
-    except:
-        logging.error('connection to %s:%d failed. retry in %d seconds...' % (broker_host, broker_port, RETRY_DELAY))
-        time.sleep(RETRY_DELAY)
-
-logging.debug ('connecting to MQTT broker %s:%d ... connected.' % (broker_host, broker_port))
-
-client.loop_start()
 
 #
 # VAD
@@ -184,27 +179,45 @@ vad = VAD(aggressiveness=aggressiveness)
 # main
 #
 
+listening = False
 client.publish(TOPIC_BOOT, 'vad')
-rec.start_recording()
 
+cnt = 0
 while True:
 
-    logging.debug ("recording...")
+    if not connected:
+        logging.debug ('connecting to MQTT broker %s:%d ... ' % (broker_host, broker_port))
+        while not connected:
+            try:
+                client.connect(broker_host, port=broker_port, keepalive=10)
+                connected = True
+            except:
+                logging.error('connection to %s:%d failed. retry in %d seconds...' % (broker_host, broker_port, RETRY_DELAY))
+                time.sleep(RETRY_DELAY)
 
-    samples = rec.get_samples()
+        logging.debug ('connecting to MQTT broker %s:%d ... connected.' % (broker_host, broker_port))
 
-    # logging.debug("%d samples, %5.2f s" % (len(samples), float(len(samples)) / float(SAMPLE_RATE)))
+    cnt += 1
 
-    if not vad_enabled:
-        continue
+    if listening:
 
-    audio, finalize = vad.process_audio(samples)
+        logging.debug ("%07d recording..." % cnt)
 
-    if not audio:
-        continue
+        samples = rec.get_samples()
 
-    logging.debug ('sending audio len=%d finalize=%s audio=%s' % (len(audio), repr(finalize), audio[0].__class__))
+        # logging.debug("%d samples, %5.2f s" % (len(samples), float(len(samples)) / float(SAMPLE_RATE)))
 
-    data = {'final': finalize, 'ts': datetime.datetime.now().isoformat(), 'pcm': audio, 'loc': loc}
-    client.publish(TOPIC_INPUT_AUDIO, json.dumps(data))
+        audio, finalize = vad.process_audio(samples)
+
+        if audio:
+            logging.debug ('sending audio len=%d finalize=%s audio=%s' % (len(audio), repr(finalize), audio[0].__class__))
+
+            data = {'final': finalize, 'ts': datetime.datetime.now().isoformat(), 'pcm': audio, 'loc': loc}
+            client.publish(TOPIC_INPUT_AUDIO, json.dumps(data))
+
+        client.loop(.01)
+
+    else:
+        logging.debug ("%07d not listening. client.loop(10)" % cnt)
+        client.loop(10)
 
